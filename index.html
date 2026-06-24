@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>极速记账 PWA</title>
+  <style>
+    /* =========================================
+       1. Token System & Base Setup
+       ========================================= */
+    :root {
+      --bg-base: #000000;
+      --glass-bg: rgba(255, 255, 255, 0.06);
+      --glass-border: rgba(255, 255, 255, 0.12);
+      --text-main: #FFFFFF;
+      --text-muted: rgba(255, 255, 255, 0.5);
+      --accent-blue: #0A84FF;
+      --accent-green: #32D74B;
+      --accent-red: #FF453A;
+      --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    
+    body {
+      font-family: var(--font-stack);
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      overflow: hidden;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    /* Ambient Light Background */
+    .ambient-bg {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      z-index: -1;
+      overflow: hidden;
+      background: var(--bg-base);
+    }
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: 0.6;
+      animation: float 20s infinite alternate cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .orb-1 {
+      width: 60vw; height: 60vw;
+      background: var(--accent-blue);
+      top: -10%; left: -10%;
+    }
+    .orb-2 {
+      width: 50vw; height: 50vw;
+      background: var(--accent-green);
+      bottom: -10%; right: -10%;
+      animation-delay: -5s;
+    }
+
+    @keyframes float {
+      0% { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(20vw, 20vh) scale(1.2); }
+    }
+
+    /* Glassmorphism Utilities */
+    .glass-panel {
+      background: var(--glass-bg);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--glass-border);
+      border-radius: 24px;
+    }
+
+    /* Typography */
+    h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+    .text-huge { font-size: 48px; font-weight: 800; letter-spacing: -1px; }
+    h2 { font-size: 20px; font-weight: 600; }
+    .text-body { font-size: 16px; font-weight: 400; color: var(--text-muted); }
+    
+    /* Layout Setup */
+    .view-container {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+    .view {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      padding: 40px 24px;
+      display: flex;
+      flex-direction: column;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+    }
+    .view.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* =========================================
+       2. PIN Screen
+       ========================================= */
+    #view-pin { justify-content: center; align-items: center; }
+    .pin-display { display: flex; gap: 20px; margin: 40px 0 60px; }
+    .pin-dot {
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: var(--glass-border);
+      transition: background 0.2s;
+    }
+    .pin-dot.filled { background: var(--text-main); }
+    
+    .keypad {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
+      width: 100%; max-width: 320px;
+    }
+    .key {
+      aspect-ratio: 1;
+      display: flex; justify-content: center; align-items: center;
+      font-size: 28px; font-weight: 500;
+      border-radius: 50%;
+      background: var(--glass-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      transition: background 0.1s;
+    }
+    .key:active { background: rgba(255, 255, 255, 0.2); }
+
+    /* =========================================
+       3. Record Screen
+       ========================================= */
+    #view-record { justify-content: center; align-items: center; }
+    .record-btn {
+      width: 160px; height: 160px;
+      border-radius: 50%;
+      display: flex; justify-content: center; align-items: center;
+      flex-direction: column;
+      color: var(--text-main);
+      font-size: 18px; font-weight: 500;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.3);
+      transition: transform 0.2s;
+    }
+    .record-btn:active { transform: scale(0.95); }
+    .record-btn.recording {
+      animation: pulse-red 1.5s infinite;
+      border-color: rgba(255, 69, 58, 0.5);
+    }
+    @keyframes pulse-red {
+      0% { box-shadow: 0 0 0 0 rgba(255, 69, 58, 0.4); }
+      70% { box-shadow: 0 0 0 40px rgba(255, 69, 58, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(255, 69, 58, 0); }
+    }
+
+    /* 3-Second Confirmation Toast */
+    .toast-overlay {
+      position: absolute; bottom: -120px; left: 24px; right: 24px;
+      padding: 20px;
+      display: flex; flex-direction: column; gap: 16px;
+      transition: bottom 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .toast-overlay.show { bottom: 100px; }
+    .toast-info { display: flex; justify-content: space-between; align-items: center; }
+    .toast-price { font-size: 24px; font-weight: 700; }
+    .progress-bar-container { width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; }
+    .progress-bar { height: 100%; background: var(--text-main); width: 100%; transform-origin: left; }
+    .toast-overlay.show .progress-bar { animation: shrink 3s linear forwards; }
+    @keyframes shrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+    .undo-btn {
+      background: none; border: none; color: var(--accent-red);
+      font-size: 16px; font-weight: 600;
+    }
+
+    /* =========================================
+       4. Dashboard Screen
+       ========================================= */
+    .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;}
+    .settings-icon { font-size: 24px; opacity: 0.6; padding: 8px;}
+    .chart-container {
+      width: 100%; height: 180px; margin: 40px 0;
+      position: relative;
+    }
+    svg.trend-line { width: 100%; height: 100%; overflow: visible; }
+    polyline {
+      fill: none; stroke: var(--accent-blue); stroke-width: 3;
+      stroke-linecap: round; stroke-linejoin: round;
+      filter: drop-shadow(0 8px 8px rgba(10, 132, 255, 0.4));
+    }
+    .recent-list { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; overflow-y: auto; padding-bottom: 80px;}
+    .list-item {
+      display: flex; justify-content: space-between; padding: 16px;
+    }
+
+    /* =========================================
+       5. Bottom Nav
+       ========================================= */
+    .bottom-nav {
+      position: absolute; bottom: 0; left: 0; width: 100%;
+      height: 80px; padding-bottom: 20px;
+      display: flex; justify-content: space-around; align-items: center;
+      background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+      z-index: 10; opacity: 0; pointer-events: none; transition: opacity 0.3s;
+    }
+    .bottom-nav.visible { opacity: 1; pointer-events: auto; }
+    .nav-item {
+      color: var(--text-muted); font-size: 14px; font-weight: 500;
+      padding: 10px 20px; transition: color 0.2s;
+    }
+    .nav-item.active { color: var(--text-main); }
+  </style>
+</head>
+<body>
+
+  <div class="ambient-bg">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+  </div>
+
+  <div class="view-container">
+    
+    <div id="view-pin" class="view active">
+      <div id="pin-message" class="text-body" style="margin-bottom: 8px;">请输入安全校验码</div>
+      <div class="pin-display">
+        <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+      </div>
+      <div class="keypad">
+        <div class="key" onclick="inputPin(1)">1</div><div class="key" onclick="inputPin(2)">2</div><div class="key" onclick="inputPin(3)">3</div>
+        <div class="key" onclick="inputPin(4)">4</div><div class="key" onclick="inputPin(5)">5</div><div class="key" onclick="inputPin(6)">6</div>
+        <div class="key" onclick="inputPin(7)">7</div><div class="key" onclick="inputPin(8)">8</div><div class="key" onclick="inputPin(9)">9</div>
+        <div></div><div class="key" onclick="inputPin(0)">0</div><div class="key" style="font-size: 20px; background:transparent; border:none;" onclick="clearPin()">清除</div>
+      </div>
+    </div>
+
+    <div id="view-record" class="view">
+      <div id="record-btn" class="glass-panel record-btn" onclick="toggleRecord()">
+        <span id="record-text">轻触记账</span>
+      </div>
+
+      <div id="save-toast" class="glass-panel toast-overlay">
+        <div class="toast-info">
+          <div>
+            <div class="text-body" style="font-size: 14px;">已识别</div>
+            <div id="parsed-label" style="font-size: 20px; font-weight: 600; margin-top: 4px;">餐饮</div>
+          </div>
+          <div id="parsed-amount" class="toast-price">¥ 45.00</div>
+        </div>
+        <div class="progress-bar-container">
+          <div class="progress-bar"></div>
+        </div>
+        <div style="display: flex; justify-content: flex-end;">
+          <button class="undo-btn" onclick="cancelSave()">撤销入账</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="view-dashboard" class="view">
+      <div class="header-row">
+        <div class="text-body">本月总支出</div>
+        <div class="settings-icon" onclick="resetPin()">⚙</div>
+      </div>
+      <div id="total-expense" class="text-huge">¥ 3,450.00</div>
+      
+      <div class="chart-container">
+        <svg class="trend-line" viewBox="0 0 300 100" preserveAspectRatio="none">
+          <polyline id="trend-path" points="0,90 50,60 100,70 150,30 200,50 250,20 300,40"></polyline>
+        </svg>
+      </div>
+
+      <h2 style="margin-bottom: 12px;">近期账单</h2>
+      <div class="recent-list">
+        <div class="glass-panel list-item">
+          <div><div style="font-weight: 500;">打车</div><div class="text-body" style="font-size:12px; margin-top:4px;">14:32</div></div>
+          <div style="font-weight: 600;">- ¥ 45.00</div>
+        </div>
+        <div class="glass-panel list-item">
+          <div><div style="font-weight: 500;">咖啡</div><div class="text-body" style="font-size:12px; margin-top:4px;">09:15</div></div>
+          <div style="font-weight: 600;">- ¥ 28.00</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="bottom-nav" class="bottom-nav">
+    <div class="nav-item active" onclick="switchView('record')">记账</div>
+    <div class="nav-item" onclick="switchView('dashboard')">统计</div>
+  </div>
+
+  <script>
+    /* =========================================
+       Application Logic
+       ========================================= */
+    let currentPin = '';
+    let systemPin = localStorage.getItem('app_pin') || '0000'; // 默认密码 0000
+    let isRecording = false;
+    let autoSaveTimer = null;
+    let isChangingPin = false;
+
+    // PIN Logic
+    function inputPin(num) {
+      if (currentPin.length < 4) {
+        currentPin += num;
+        updatePinDisplay();
+      }
+      if (currentPin.length === 4) {
+        setTimeout(verifyPin, 100);
+      }
+    }
+
+    function clearPin() {
+      currentPin = '';
+      updatePinDisplay();
+    }
+
+    function updatePinDisplay() {
+      const dots = document.querySelectorAll('.pin-dot');
+      dots.forEach((dot, index) => {
+        if (index < currentPin.length) dot.classList.add('filled');
+        else dot.classList.remove('filled');
+      });
+    }
+
+    function verifyPin() {
+      if (isChangingPin) {
+        localStorage.setItem('app_pin', currentPin);
+        systemPin = currentPin;
+        isChangingPin = false;
+        document.getElementById('pin-message').innerText = "密码修改成功";
+        setTimeout(() => switchView('dashboard'), 1000);
+      } else {
+        if (currentPin === systemPin) {
+          switchView('record');
+          document.getElementById('bottom-nav').classList.add('visible');
+        } else {
+          document.getElementById('pin-message').innerText = "密码错误，请重试";
+          document.getElementById('pin-message').style.color = "var(--accent-red)";
+          clearPin();
+          setTimeout(() => {
+            document.getElementById('pin-message').style.color = "var(--text-muted)";
+            document.getElementById('pin-message').innerText = "请输入安全校验码";
+          }, 1500);
+        }
+      }
+    }
+
+    function resetPin() {
+      isChangingPin = true;
+      document.getElementById('bottom-nav').classList.remove('visible');
+      document.getElementById('pin-message').innerText = "请输入新的4位密码";
+      clearPin();
+      switchView('pin');
+    }
+
+    // View Switching Logic
+    function switchView(viewName) {
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.getElementById(`view-${viewName}`).classList.add('active');
+      
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      if(viewName !== 'pin') {
+        const index = viewName === 'record' ? 0 : 1;
+        document.querySelectorAll('.nav-item')[index].classList.add('active');
+      }
+
+      // 每次进入 Dashboard 时随机生成折线图以示活跃
+      if(viewName === 'dashboard') generateChart();
+    }
+
+    // Record & Auto-Save Logic (Speed-first Flow)
+    function toggleRecord() {
+      const btn = document.getElementById('record-btn');
+      const text = document.getElementById('record-text');
+      const toast = document.getElementById('save-toast');
+
+      if (toast.classList.contains('show')) return; // 防止重复触发
+
+      isRecording = !isRecording;
+      
+      if (isRecording) {
+        btn.classList.add('recording');
+        text.innerText = "倾听中...";
+        // 模拟 2 秒语音录入后自动完成
+        setTimeout(() => {
+          if(isRecording) toggleRecord(); // 自动停止录音
+        }, 2000);
+      } else {
+        btn.classList.remove('recording');
+        text.innerText = "轻触记账";
+        triggerParsing();
+      }
+    }
+
+    function triggerParsing() {
+      // 模拟解析出的数据
+      const categories = ['打车', '餐饮', '日用品', '数码'];
+      const randomCat = categories[Math.floor(Math.random() * categories.length)];
+      const randomAmt = (Math.random() * 100 + 10).toFixed(2);
+      
+      document.getElementById('parsed-label').innerText = randomCat;
+      document.getElementById('parsed-amount').innerText = `¥ ${randomAmt}`;
+      
+      const toast = document.getElementById('save-toast');
+      toast.classList.add('show');
+
+      // 3秒无缝流：超时自动入账
+      autoSaveTimer = setTimeout(() => {
+        toast.classList.remove('show');
+        // 此处可添加保存入库逻辑
+      }, 3000);
+    }
+
+    function cancelSave() {
+      clearTimeout(autoSaveTimer);
+      document.getElementById('save-toast').classList.remove('show');
+    }
+
+    // Chart Generation
+    function generateChart() {
+      const path = document.getElementById('trend-path');
+      // 模拟生成 7 个数据点映射到 300x100 的画布
+      let points = [];
+      for(let i=0; i<7; i++) {
+        let x = (i / 6) * 300;
+        let y = Math.floor(Math.random() * 60) + 20; // 20 - 80 的 Y 轴范围
+        points.push(`${x},${y}`);
+      }
+      path.setAttribute('points', points.join(' '));
+    }
+  </script>
+</body>
+</html>
